@@ -1,4 +1,3 @@
-````markdown
 # Sistema de Reconhecimento Facial com RFID
 
 Este projeto foi desenvolvido como **Trabalho de Conclusão de Curso (TCC) de Automação Industrial** com o objetivo de criar um sistema de **controle de acesso seguro** utilizando **reconhecimento facial** e autenticação com **cartão RFID**.  
