@@ -6,12 +6,13 @@ import face_recognition
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QLabel,
     QFileDialog, QMessageBox, QScrollArea, QHBoxLayout, QFrame,
-    QDialog, QDialogButtonBox
+    QDialog, QDialogButtonBox, QInputDialog
 )
 from PyQt5.QtGui import QPixmap, QImage
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QEventLoop
 import pickle
 import serial
+import serial.tools.list_ports
 import time
 
 # === Configurações ===
@@ -20,13 +21,20 @@ os.makedirs(faces_dir, exist_ok=True)
 encodings_file = os.path.join(faces_dir, "encodings.pkl")
 cards_file = os.path.join(faces_dir, "cards.pkl")
 
-# === Conectar ao Arduino ===
-try:
-    arduino = serial.Serial("COM3", 9600, timeout=1)  # substitua COM3 pela sua porta
-    time.sleep(2)
-except:
-    arduino = None
-    print("Não foi possível conectar ao Arduino.")
+# === Detectar e conectar ao Arduino automaticamente ===
+arduino = None
+for port in serial.tools.list_ports.comports():
+    try:
+        if "Arduino" in port.description or "USB" in port.description:
+            arduino = serial.Serial(port.device, 9600, timeout=1)
+            time.sleep(2)
+            print(f"Conectado ao Arduino na porta {port.device}")
+            break
+    except Exception as e:
+        print("Erro ao tentar conectar:", e)
+
+if arduino is None:
+    print("Não foi possível detectar o Arduino. Certifique-se de que está conectado e a porta está correta.")
 
 # === Utilitários ===
 def load_known_faces():
@@ -79,16 +87,60 @@ def save_cards(cards):
     with open(cards_file, "wb") as f:
         pickle.dump(cards, f)
 
-# === Ler UID do Arduino ===
-def aguardar_cartao():
-    if arduino is None:
-        return None
-    while True:
-        if arduino.in_waiting > 0:
-            uid = arduino.readline().decode().strip()
-            if uid:
-                print("Cartão detectado:", uid)
-                return uid
+# === Ler UID do Arduino com caixa de espera (não bloqueia GUI) ===
+def aguardar_cartao_dialog(parent, message="Aproxime o cartão do leitor"):
+    dialog = QMessageBox(parent)
+    dialog.setWindowTitle("Aguardando Cartão")
+    dialog.setText(message)
+    dialog.setStandardButtons(QMessageBox.Cancel)
+    dialog.setWindowModality(Qt.ApplicationModal)
+    dialog.show()
+
+    uid_container = {"uid": None}
+    loop = QEventLoop()
+
+    def check_serial():
+        if arduino:
+            try:
+                while arduino.in_waiting > 0:
+                    line = arduino.readline().decode(errors="ignore").strip()
+                    if line:
+                        # Ignora mensagens de status e pega só UID válido
+                        if line.startswith("Arduino pronto") or line.lower().startswith("log"):
+                            print(f"[DEBUG] Mensagem ignorada do Arduino: {line}")
+                        else:
+                            print(f"[DEBUG] UID recebido: {line}")
+                            uid_container["uid"] = line
+                            loop.quit()
+                            return
+            except Exception as e:
+                print("[ERROR] Erro lendo Arduino:", e)
+                loop.quit()
+
+    def close_dialog():
+        print("[DEBUG] Usuário fechou a espera do cartão")
+        loop.quit()
+
+    # Conecta botão de fechar
+    cancel_button = dialog.button(QMessageBox.Cancel)
+    cancel_button.clicked.connect(close_dialog)
+
+    # Timer para checagem do Arduino
+    timer_serial = QTimer()
+    timer_serial.timeout.connect(check_serial)
+    timer_serial.start(50)  # checa a cada 50ms
+
+    loop.exec_()
+
+    timer_serial.stop()
+    dialog.close()
+
+    if uid_container["uid"] is None:
+        print("[DEBUG] Nenhum UID detectado")
+    else:
+        print(f"[DEBUG] UID final retornado: {uid_container['uid']}")
+
+    return uid_container["uid"]
 
 # === Janela de pré-visualização ===
 class CaptureDialog(QDialog):
@@ -163,7 +215,7 @@ class App(QWidget):
         btn_unlock.clicked.connect(self.unlock)
         btn_layout.addWidget(btn_unlock)
 
-        btn_add_face = QPushButton("Adicionar Rosto")
+        btn_add_face = QPushButton("Adicionar Rosto + Cartão")
         btn_add_face.setStyleSheet(f"background-color: #2ecc71; {btn_style}")
         btn_add_face.clicked.connect(self.add_face)
         btn_layout.addWidget(btn_add_face)
@@ -194,6 +246,7 @@ class App(QWidget):
         self.known_encodings, self.known_names = load_known_faces()
         self.refresh_user_list()
 
+    # === Atualiza a lista de usuários ===
     def refresh_user_list(self):
         for i in reversed(range(self.users_container.count())):
             widget = self.users_container.itemAt(i).widget()
@@ -220,79 +273,117 @@ class App(QWidget):
             user_frame.setLayout(user_layout)
             self.users_container.addWidget(user_frame)
 
+    # === Desbloquear porta com rosto e cartão ===
     def unlock(self):
         dialog = CaptureDialog()
-        if dialog.exec_() == QDialog.Accepted:
-            frame = dialog.captured_frame
-            encoding = get_face_encoding(frame)
-            if encoding is None:
-                QMessageBox.warning(self, "Falha", "Nenhum rosto detectado.")
-                return
+        if dialog.exec_() != QDialog.Accepted:
+            return
 
-            user_name = compare_faces(self.known_encodings, self.known_names, encoding)
-            if not user_name:
-                QMessageBox.warning(self, "Falha", "Rosto não reconhecido.")
-                return
+        frame = dialog.captured_frame
+        encoding = get_face_encoding(frame)
+        if encoding is None:
+            QMessageBox.warning(self, "Falha", "Nenhum rosto detectado.")
+            return
 
-            display_name = os.path.splitext(user_name)[0]
-            QMessageBox.information(self, "Rosto reconhecido", f"Rosto detectado: {display_name}\nAproxime o cartão RFID...")
+        user_name = compare_faces(self.known_encodings, self.known_names, encoding)
+        if not user_name:
+            QMessageBox.warning(self, "Falha", "Rosto não reconhecido.")
+            return
 
-            cards = load_cards()
-            uid = aguardar_cartao()
-            if not uid:
-                QMessageBox.warning(self, "Falha", "Nenhum cartão detectado.")
-                return
+        display_name = os.path.splitext(user_name)[0]
+        cards = load_cards()
 
-            if user_name in cards:
-                if cards[user_name] == uid:
-                    QMessageBox.information(self, "Sucesso", f"Acesso liberado para {display_name}!")
-                    if arduino:
-                        arduino.write(b"OPEN\n")
-                else:
-                    QMessageBox.warning(self, "Falha", "Cartão não corresponde ao rosto!")
-            else:
-                cards[user_name] = uid
-                save_cards(cards)
-                QMessageBox.information(self, "Sucesso", f"Cartão associado a {display_name} e porta liberada!")
-                if arduino:
-                    arduino.write(b"OPEN\n")
+        # Aguarda cartão de forma não bloqueante
+        uid = aguardar_cartao_dialog(self, f"Rosto reconhecido: {display_name}\nAproxime o cartão do leitor")
+        if not uid:
+            QMessageBox.warning(self, "Falha", "Nenhum cartão detectado.")
+            return
 
+        if user_name in cards and cards[user_name] == uid:
+            if arduino:
+                arduino.write(b"OPEN\n")
+            QMessageBox.information(self, "Sucesso", f"Acesso liberado para {display_name}")
+        elif user_name in cards and cards[user_name] != uid:
+            QMessageBox.critical(self, "Erro", "Cartão não corresponde ao rosto!")
+        else:
+            cards[user_name] = uid
+            save_cards(cards)
+            if arduino:
+                arduino.write(b"OPEN\n")
+            QMessageBox.information(self, "Sucesso", f"Cartão registrado e acesso liberado para {display_name}")
+
+    # === Adicionar rosto + cartão ===
     def add_face(self):
         dialog = CaptureDialog()
-        if dialog.exec_() == QDialog.Accepted:
-            frame = dialog.captured_frame
-            encoding = get_face_encoding(frame)
-            if encoding is None:
-                QMessageBox.warning(self, "Falha", "Nenhum rosto detectado.")
-                return
+        if dialog.exec_() != QDialog.Accepted:
+            return
 
-            name, _ = QFileDialog.getSaveFileName(self, "Salvar rosto", faces_dir + "/", "Imagem (*.jpg)")
-            if name:
-                cv2.imwrite(name, frame)
-                self.known_encodings.append(np.array(encoding))
-                self.known_names.append(os.path.basename(name))
-                save_known_faces(self.known_encodings, self.known_names)
-                self.refresh_user_list()
-                QMessageBox.information(self, "Sucesso", "Rosto cadastrado!")
+        frame = dialog.captured_frame
+        encoding = get_face_encoding(frame)
+        if encoding is None:
+            QMessageBox.warning(self, "Falha", "Nenhum rosto detectado.")
+            return
 
+        name, _ = QFileDialog.getSaveFileName(self, "Salvar rosto", faces_dir + "/", "Imagem (*.jpg)")
+        if not name:
+            return
+
+        uid = aguardar_cartao_dialog(self, "Aproxime o cartão para associar ao usuário")
+        if not uid:
+            QMessageBox.warning(self, "Falha", "Nenhum cartão detectado. Cadastro cancelado.")
+            return
+
+        cards = load_cards()
+        base_name = os.path.basename(name)
+        if base_name in self.known_names:
+            QMessageBox.warning(self, "Erro", "Esse usuário já está cadastrado. Remova antes de adicionar novamente.")
+            return
+
+
+        cv2.imwrite(name, frame)
+        self.known_encodings.append(np.array(encoding))
+        self.known_names.append(os.path.basename(name))
+        save_known_faces(self.known_encodings, self.known_names)
+
+        cards[os.path.basename(name)] = uid
+        save_cards(cards)
+
+        self.refresh_user_list()
+        QMessageBox.information(self, "Sucesso", f"Rosto e cartão cadastrados para {os.path.splitext(os.path.basename(name))[0]}")
+
+    # === Remover rosto ===
     def remove_face(self):
         if not self.known_names:
             QMessageBox.warning(self, "Erro", "Nenhum rosto para remover.")
             return
 
-        user, ok = QFileDialog.getItem(self, "Remover rosto", "Selecione o usuário:", self.known_names, 0, False)
+        # Mostra lista de usuários para escolher
+        user, ok = QInputDialog.getItem(self, "Remover rosto", "Selecione o usuário:", self.known_names, 0, False)
         if ok and user:
             index = self.known_names.index(user)
             removed_name = self.known_names.pop(index)
             self.known_encodings.pop(index)
 
+            # Remove imagem do usuário
             img_path = os.path.join(faces_dir, removed_name)
             if os.path.exists(img_path):
-                os.remove(img_path)
+                try:
+                    os.remove(img_path)
+                except Exception as e:
+                    print(f"[ERRO] Não foi possível remover a imagem {img_path}: {e}")
 
+            # Remove também do cards.pkl
+            cards = load_cards()
+            if removed_name in cards:
+                del cards[removed_name]
+            save_cards(cards)
+
+            # Atualiza encodings.pkl
             save_known_faces(self.known_encodings, self.known_names)
+
+            # Atualiza lista na interface
             self.refresh_user_list()
-            QMessageBox.information(self, "Sucesso", f"Rosto removido: {removed_name}")
+            QMessageBox.information(self, "Sucesso", f"Usuário removido: {os.path.splitext(removed_name)[0]}")
 
 # === Executar app ===
 app = QApplication(sys.argv)
