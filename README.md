@@ -63,7 +63,7 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 ---
 ## Tecnologias e Bibliotecas Principais
 
-### 🔹 Python
+### Python
 - [PyQt5](https://pypi.org/project/PyQt5/) → Interface gráfica  
 - [face_recognition](https://github.com/ageitgey/face_recognition) → Reconhecimento facial  
 - [OpenCV](https://opencv.org/) → Manipulação da câmera e imagens  
@@ -71,7 +71,7 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 - [pickle](https://docs.python.org/3/library/pickle.html) → Persistência de dados (rostos e cartões)  
 - [pyserial](https://pyserial.readthedocs.io/) → Comunicação serial com Arduino  
 
-### 🔹 Arduino
+### Arduino
 - [MFRC522](https://github.com/miguelbalboa/rfid) → Leitura de cartões RFID  
 - [Servo.h](https://www.arduino.cc/en/reference/servo) → Controle do motor de trava  
 - [SPI.h](https://www.arduino.cc/en/reference/SPI) → Comunicação com módulo RFID  
@@ -81,10 +81,11 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 ## Como Executar
 
 1. Clone o repositório:
-   ```bash
+
+    ```bash
    git clone https://github.com/jvjfe/PyFacesRecognition
    cd PyFacesRecognition
-````
+    ````
 
 2. Ative o ambiente virtual e instale as dependências:
 
@@ -114,10 +115,10 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 
 # Autores
 
-João Fernando Zanin de Andrade Fernandes
-João Vítor Justino Ferri - [Jvjfe](https://github.com/jvjfe)
-Josué Elias Guimarães Cruz
-Lucas do Nascimento Feitosa Scarparo
-Thiago Henrique Marques Magalhães Alcântara
+* João Fernando Zanin de Andrade Fernandes
+* João Vítor Justino Ferri - [Jvjfe](https://github.com/jvjfe)
+* Josué Elias Guimarães Cruz
+* Lucas do Nascimento Feitosa Scarparo
+* Thiago Henrique Marques Magalhães Alcântara
 
 Trabalho de Conclusão de Curso - ETEC Automação Industrial
