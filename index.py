@@ -6,20 +6,30 @@ import face_recognition
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QLabel,
     QFileDialog, QMessageBox, QScrollArea, QHBoxLayout, QFrame,
-    QInputDialog, QDialog, QDialogButtonBox
+    QDialog, QDialogButtonBox
 )
 from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtCore import Qt, QTimer
 import pickle
+import serial
+import time
 
 # === Configurações ===
 faces_dir = "faces"
 os.makedirs(faces_dir, exist_ok=True)
 encodings_file = os.path.join(faces_dir, "encodings.pkl")
+cards_file = os.path.join(faces_dir, "cards.pkl")
+
+# === Conectar ao Arduino ===
+try:
+    arduino = serial.Serial("COM3", 9600, timeout=1)  # substitua COM3 pela sua porta
+    time.sleep(2)
+except:
+    arduino = None
+    print("Não foi possível conectar ao Arduino.")
 
 # === Utilitários ===
 def load_known_faces():
-    """Carrega encodings válidos e descarta inválidos."""
     encodings, names = [], []
     if os.path.exists(encodings_file):
         with open(encodings_file, "rb") as f:
@@ -28,13 +38,12 @@ def load_known_faces():
             raw_names = data.get("names", [])
             for e, n in zip(raw_encodings, raw_names):
                 arr = np.array(e)
-                if arr.shape == (128,):  # apenas encodings válidos
+                if arr.shape == (128,):
                     encodings.append(arr)
                     names.append(n)
     return encodings, names
 
 def save_known_faces(encodings, names):
-    """Salva encodings como listas para pickle."""
     serializable_encodings = [e.tolist() for e in encodings]
     with open(encodings_file, "wb") as f:
         pickle.dump({"encodings": serializable_encodings, "names": names}, f)
@@ -45,26 +54,41 @@ def get_face_encoding(image):
     if not face_locations:
         return None
     encodings = face_recognition.face_encodings(rgb_image, known_face_locations=face_locations)
-    if encodings:
-        return encodings[0]
-    return None
+    return encodings[0] if encodings else None
 
 def compare_faces(known_encodings, known_names, encoding, tolerance=0.5):
-    """Retorna o nome do usuário se houver match, senão None"""
     if not known_encodings or encoding is None:
         return None
     known_encodings = [np.array(e) for e in known_encodings if np.array(e).shape == (128,)]
     encoding = np.array(encoding)
     if encoding.shape != (128,) or not known_encodings:
         return None
-
     results = face_recognition.compare_faces(known_encodings, encoding, tolerance=tolerance)
     if any(results):
         index = results.index(True)
         return known_names[index]
     return None
 
+def load_cards():
+    if os.path.exists(cards_file):
+        with open(cards_file, "rb") as f:
+            return pickle.load(f)
+    return {}
 
+def save_cards(cards):
+    with open(cards_file, "wb") as f:
+        pickle.dump(cards, f)
+
+# === Ler UID do Arduino ===
+def aguardar_cartao():
+    if arduino is None:
+        return None
+    while True:
+        if arduino.in_waiting > 0:
+            uid = arduino.readline().decode().strip()
+            if uid:
+                print("Cartão detectado:", uid)
+                return uid
 
 # === Janela de pré-visualização ===
 class CaptureDialog(QDialog):
@@ -167,7 +191,6 @@ class App(QWidget):
 
         self.setLayout(layout)
 
-        # Carregar rostos
         self.known_encodings, self.known_names = load_known_faces()
         self.refresh_user_list()
 
@@ -207,15 +230,32 @@ class App(QWidget):
                 return
 
             user_name = compare_faces(self.known_encodings, self.known_names, encoding)
-            if user_name:
-                display_name = os.path.splitext(user_name)[0]
-                QMessageBox.information(self, "Sucesso", f"Porta desbloqueada por: {display_name}!")
-
-            else:
+            if not user_name:
                 QMessageBox.warning(self, "Falha", "Rosto não reconhecido.")
+                return
 
+            display_name = os.path.splitext(user_name)[0]
+            QMessageBox.information(self, "Rosto reconhecido", f"Rosto detectado: {display_name}\nAproxime o cartão RFID...")
 
+            cards = load_cards()
+            uid = aguardar_cartao()
+            if not uid:
+                QMessageBox.warning(self, "Falha", "Nenhum cartão detectado.")
+                return
 
+            if user_name in cards:
+                if cards[user_name] == uid:
+                    QMessageBox.information(self, "Sucesso", f"Acesso liberado para {display_name}!")
+                    if arduino:
+                        arduino.write(b"OPEN\n")
+                else:
+                    QMessageBox.warning(self, "Falha", "Cartão não corresponde ao rosto!")
+            else:
+                cards[user_name] = uid
+                save_cards(cards)
+                QMessageBox.information(self, "Sucesso", f"Cartão associado a {display_name} e porta liberada!")
+                if arduino:
+                    arduino.write(b"OPEN\n")
 
     def add_face(self):
         dialog = CaptureDialog()
@@ -240,7 +280,7 @@ class App(QWidget):
             QMessageBox.warning(self, "Erro", "Nenhum rosto para remover.")
             return
 
-        user, ok = QInputDialog.getItem(self, "Remover rosto", "Selecione o usuário:", self.known_names, 0, False)
+        user, ok = QFileDialog.getItem(self, "Remover rosto", "Selecione o usuário:", self.known_names, 0, False)
         if ok and user:
             index = self.known_names.index(user)
             removed_name = self.known_names.pop(index)
