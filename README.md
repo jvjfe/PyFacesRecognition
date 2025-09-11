@@ -25,7 +25,7 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 
 ---
 
-## 💻 Principais Bibliotecas Utilizadas
+## Principais Bibliotecas Utilizadas
 
 ### Python
 - `opencv-python` → Captura e processamento de imagem para reconhecimento facial.  
@@ -96,8 +96,7 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 
    pip install -r requirements.txt
    ```
-
-3. Conecte o **Arduino Uno** via USB e carregue o código `arduino/index.ino`.
+3. Conecte o **Arduino Uno** via USB e carregue o código `index.ino`.
 
 4. Execute o sistema Python:
 
