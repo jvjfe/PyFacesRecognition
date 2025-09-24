@@ -102,7 +102,7 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 4. Execute o sistema Python:
 
    ```bash
-   python index.py
+   python -m src.main         
    ```
 
 5. O sistema iniciará a câmera.
