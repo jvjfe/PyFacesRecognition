@@ -3,10 +3,11 @@ from PyQt5.QtWidgets import (
     QFileDialog, QMessageBox, QInputDialog, QTextEdit, QListWidget,
     QListWidgetItem, QLineEdit, QDialog, QDialogButtonBox
 )
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPixmap, QColor, QPainter
+from PyQt5.QtCore import Qt, QTimer
 import os, cv2, json, numpy as np
 from datetime import datetime
+from .arduino import conectar_arduino
 
 from .utils import (
     load_known_faces, save_known_faces, get_face_encoding, compare_faces,
@@ -99,6 +100,13 @@ class App(QWidget):
         self.arduino = arduino
         self.setWindowTitle("Controle de Acesso RFID + Rosto")
         self.setGeometry(400, 200, 1000, 600)
+
+        # Indicador de status do Arduino
+        self.status_label = QLabel()
+        self.status_label.setFixedSize(20, 20)
+        self.status_label.setStyleSheet("border-radius: 10px; background-color: red;")
+        self.status_label.setToolTip("Arduino desconectado")
+
         self.logs_visible = False
         self.last_access = load_last_access()
         self.status = load_status()
@@ -158,10 +166,17 @@ class App(QWidget):
         left_layout = QVBoxLayout()
         left_layout.setAlignment(Qt.AlignTop)
 
+        # layout do topo (status + título)
+        top_layout = QHBoxLayout()
+        top_layout.setAlignment(Qt.AlignLeft)
+        top_layout.addWidget(self.status_label)
+
         self.label = QLabel("🔒 Controle de Acesso")
         self.label.setObjectName("title")
         self.label.setAlignment(Qt.AlignCenter)
-        left_layout.addWidget(self.label)
+        top_layout.addWidget(self.label)
+
+        left_layout.addLayout(top_layout)
 
         # botões
         btn_layout = QHBoxLayout()
@@ -189,7 +204,7 @@ class App(QWidget):
         self.search_box.textChanged.connect(self.filter_users)
         left_layout.addWidget(self.search_box)
 
-        # lista (escalável)
+        # lista de usuários
         self.user_list = QListWidget()
         self.user_list.itemClicked.connect(self.show_user_details)
         left_layout.addWidget(self.user_list)
@@ -205,9 +220,32 @@ class App(QWidget):
 
         self.setLayout(main_layout)
 
-        # dados
+        # carregar dados
         self.known_encodings, self.known_names = load_known_faces()
         self.refresh_user_list()
+
+        # Timer para verificar o status do Arduino
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.atualizar_status_arduino)
+        self.timer.start(10000)  # a cada 10 segundos
+        self.atualizar_status_arduino()  # verificação inicial
+
+    # atualizar status do Arduino
+    def atualizar_status_arduino(self):
+        if self.arduino and self.arduino.is_open:
+            self.status_label.setStyleSheet("border-radius: 10px; background-color: green;")
+            self.status_label.setToolTip("Arduino conectado")
+        else:
+            novo_arduino = conectar_arduino()
+            if novo_arduino:
+                self.arduino = novo_arduino
+                self.status_label.setStyleSheet("border-radius: 10px; background-color: green;")
+                self.status_label.setToolTip("Arduino conectado")
+                self.add_log("Arduino conectado com sucesso.")
+            else:
+                self.status_label.setStyleSheet("border-radius: 10px; background-color: red;")
+                self.status_label.setToolTip("Arduino desconectado")
+                self.add_log("Arduino não encontrado.")
 
     # mostrar/ocultar logs
     def toggle_logs(self):
@@ -219,8 +257,7 @@ class App(QWidget):
         self.user_list.clear()
         for name in self.known_names:
             display = os.path.splitext(name)[0]
-            item = QListWidgetItem(display)
-            self.user_list.addItem(item)
+            self.user_list.addItem(QListWidgetItem(display))
 
     # filtrar
     def filter_users(self, text):
