@@ -1,4 +1,3 @@
-# ui.py
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton,
     QFileDialog, QMessageBox, QInputDialog, QTextEdit, QListWidget,
@@ -16,6 +15,7 @@ from .utils import (
 from .dialogs import CaptureDialog, aguardar_cartao_dialog
 
 LAST_ACCESS_FILE = os.path.join(faces_dir, "last_access.json")
+STATUS_FILE = os.path.join(faces_dir, "status.json")
 
 
 def load_last_access():
@@ -36,8 +36,26 @@ def save_last_access(data):
         print("[ERRO] Não foi possível salvar last_access:", e)
 
 
+def load_status():
+    if os.path.exists(STATUS_FILE):
+        try:
+            with open(STATUS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_status(data):
+    try:
+        with open(STATUS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("[ERRO] Não foi possível salvar status:", e)
+
+
 class UserDialog(QDialog):
-    def __init__(self, name, img_path, last_access, parent=None):
+    def __init__(self, name, img_path, last_access, status, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Detalhes do Usuário")
         self.setStyleSheet("""
@@ -64,6 +82,10 @@ class UserDialog(QDialog):
         last_access_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(last_access_label)
 
+        status_label = QLabel(f"📍 Status: {'Dentro da empresa' if status == 'dentro' else 'Fora da empresa'}")
+        status_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(status_label)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
@@ -79,8 +101,9 @@ class App(QWidget):
         self.setGeometry(400, 200, 1000, 600)
         self.logs_visible = False
         self.last_access = load_last_access()
+        self.status = load_status()
 
-        # estilo (removida a fonte específica para evitar warnings no mac)
+        # estilo
         self.setStyleSheet("""
             QWidget {
                 background-color: #0f172a;
@@ -208,7 +231,6 @@ class App(QWidget):
     # mostrar detalhes
     def show_user_details(self, item):
         display_name = item.text()
-        # procura a file name correspondente em known_names
         matched = None
         for fname in self.known_names:
             if os.path.splitext(fname)[0] == display_name:
@@ -219,7 +241,8 @@ class App(QWidget):
             return
         img_path = os.path.join(faces_dir, matched)
         last = self.last_access.get(matched, self.last_access.get(os.path.splitext(matched)[0], "Nunca"))
-        dlg = UserDialog(matched, img_path, last, self)
+        status = self.status.get(matched, "fora")
+        dlg = UserDialog(matched, img_path, last, status, self)
         dlg.exec_()
 
     # adicionar log
@@ -227,7 +250,7 @@ class App(QWidget):
         timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self.log_panel.append(f"[{timestamp}] {message}")
 
-    # desbloquear (corrigido para NÃO cadastrar automaticamente um cartão diferente)
+    # desbloquear
     def unlock(self):
         dialog = CaptureDialog()
         if dialog.exec_() != dialog.Accepted:
@@ -252,25 +275,31 @@ class App(QWidget):
             QMessageBox.warning(self, "Falha", "Nenhum cartão detectado.")
             return
 
-        # Caso 1: usuário já tem um cartão cadastrado
         if user_name in cards:
             expected_uid = cards[user_name]
             if expected_uid == uid:
-                # acesso autorizado
                 if self.arduino:
                     self.arduino.write(b"OPEN\n")
-                QMessageBox.information(self, "Sucesso", f"Acesso liberado para {display_name}")
-                self.add_log(f"Acesso liberado para {display_name}")
-                # registrar último acesso usando a chave exata (com extensão)
+
+                current_status = self.status.get(user_name, "fora")
+                if current_status == "fora":
+                    action = "ENTRADA"
+                    self.status[user_name] = "dentro"
+                else:
+                    action = "SAÍDA"
+                    self.status[user_name] = "fora"
+
+                QMessageBox.information(self, "Sucesso", f"{action} registrada para {display_name}")
+                self.add_log(f"{action} de {display_name}")
+
                 self.last_access[user_name] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                 save_last_access(self.last_access)
+                save_status(self.status)
             else:
-                # CARTÃO DIFERENTE: negar e LOGAR tentativa — NÃO sobrescrever
                 QMessageBox.critical(self, "Erro", "Cartão não corresponde ao rosto! Ação negada.")
                 self.add_log(f"Tentativa com cartão inválido para {display_name} (UID detectado: {uid}, esperado: {expected_uid})")
             return
 
-        # Caso 2: usuário NÃO tem cartão cadastrado — perguntar se deseja registrar
         reply = QMessageBox.question(
             self, "Registrar Cartão",
             f"Nenhum cartão cadastrado para {display_name}.\nDeseja registrar o cartão detectado para este usuário?",
@@ -280,7 +309,6 @@ class App(QWidget):
             QMessageBox.information(self, "Cancelado", "Registro de cartão cancelado.")
             return
 
-        # Antes de registrar, checar se o UID já pertence a outro usuário
         existing_owner = None
         for k, v in cards.items():
             if v == uid:
@@ -292,15 +320,48 @@ class App(QWidget):
             self.add_log(f"Tentativa de registrar cartão já associado (UID {uid}) para {display_name}; proprietário: {owner_display}")
             return
 
-        # Tudo ok: registrar o cartão para user_name
         cards[user_name] = uid
         save_cards(cards)
-        QMessageBox.information(self, "Sucesso", f"Cartão registrado e acesso liberado para {display_name}")
-        self.add_log(f"Cartão registrado para {display_name} (UID: {uid})")
+        QMessageBox.information(self, "Sucesso", f"Cartão registrado e ENTRADA registrada para {display_name}")
+        self.add_log(f"Cartão registrado e ENTRADA de {display_name} (UID: {uid})")
         if self.arduino:
             self.arduino.write(b"OPEN\n")
+
         self.last_access[user_name] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        self.status[user_name] = "dentro"
         save_last_access(self.last_access)
+        save_status(self.status)
+
+    # remover rosto
+    def remove_face(self):
+        item = self.user_list.currentItem()
+        if not item:
+            QMessageBox.warning(self, "Erro", "Selecione um usuário para remover.")
+            return
+
+        user = item.text()
+        fname = None
+        for name in self.known_names:
+            if os.path.splitext(name)[0] == user:
+                fname = name
+                break
+        if not fname:
+            QMessageBox.warning(self, "Erro", "Arquivo do usuário não encontrado.")
+            return
+
+        reply = QMessageBox.question(self, "Confirmação", f"Tem certeza que deseja remover {user}?", QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+
+        try:
+            os.remove(os.path.join(faces_dir, fname))
+            self.known_names.remove(fname)
+            self.known_encodings = [enc for enc, n in zip(self.known_encodings, self.known_names) if n != fname]
+            save_known_faces(self.known_encodings, self.known_names)
+            self.refresh_user_list()
+            self.add_log(f"Usuário removido: {user}")
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Falha ao remover: {e}")
 
     # adicionar rosto
     def add_face(self):
@@ -311,160 +372,32 @@ class App(QWidget):
         frame = dialog.captured_frame
         encoding = get_face_encoding(frame)
         if encoding is None:
-            QMessageBox.warning(self, "Falha", "Nenhum rosto detectado.")
+            QMessageBox.warning(self, "Erro", "Nenhum rosto detectado.")
             return
 
-        name, _ = QFileDialog.getSaveFileName(self, "Salvar rosto", faces_dir + "/", "Imagem (*.jpg)")
-        if not name:
+        name, ok = QInputDialog.getText(self, "Novo Usuário", "Digite o nome do usuário:")
+        if not ok or not name.strip():
             return
+        name = name.strip() + ".png"
 
-        base = os.path.basename(name)
-        # previne cadastrar mesmo nome duas vezes
-        if base in self.known_names:
-            QMessageBox.warning(self, "Erro", "Já existe um usuário com esse nome. Use outro nome ou remova o existente.")
-            return
+        img_path = os.path.join(faces_dir, name)
+        cv2.imwrite(img_path, frame)
 
-        uid = aguardar_cartao_dialog(self, self.arduino, "Aproxime o cartão para associar ao usuário")
+        self.known_encodings.append(encoding)
+        self.known_names.append(name)
+        save_known_faces(self.known_encodings, self.known_names)
+        self.refresh_user_list()
+
+        uid = aguardar_cartao_dialog(self, self.arduino, f"Associe um cartão ao usuário {os.path.splitext(name)[0]}")
         if not uid:
-            QMessageBox.warning(self, "Falha", "Nenhum cartão detectado. Cadastro cancelado.")
+            QMessageBox.warning(self, "Erro", "Nenhum cartão detectado. O usuário foi cadastrado sem cartão.")
             return
-
-        # checa se o UID já pertence a outro usuário
-        cards = load_cards()
-        for owner, assigned_uid in cards.items():
-            if assigned_uid == uid:
-                owner_display = os.path.splitext(owner)[0]
-                QMessageBox.critical(self, "Erro", f"Este cartão já está associado ao usuário '{owner_display}'. Cadastro cancelado.")
-                return
-
-        # salva imagem e registra
-        cv2.imwrite(name, frame)
-        self.known_encodings.append(np.array(encoding))
-        self.known_names.append(base)
-        save_known_faces(self.known_encodings, self.known_names)
-
-        cards[base] = uid
-        save_cards(cards)
-
-        self.refresh_user_list()
-        self.add_log(f"Rosto e cartão cadastrados para {base}")
-
-    # remover rosto (mantive sua lógica segura)
-    def remove_face(self):
-        # tenta usar seleção atual da QListWidget
-        selected_item = self.user_list.currentItem() if hasattr(self, "user_list") else None
-
-        if selected_item:
-            display_name = selected_item.text()
-            reply = QMessageBox.question(
-                self, "Confirmar Remoção",
-                f"Remover usuário '{display_name}' ?",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply != QMessageBox.Yes:
-                return
-
-            # encontra o filename correspondente em self.known_names
-            matched_index = None
-            matched_fname = None
-            for i, fname in enumerate(self.known_names):
-                if os.path.splitext(fname)[0] == display_name:
-                    matched_index = i
-                    matched_fname = fname
-                    break
-
-            if matched_index is None:
-                QMessageBox.warning(self, "Erro", "Usuário não encontrado nos registros.")
-                return
-
-            # remove encoding e nome
-            removed_name = self.known_names.pop(matched_index)
-            try:
-                self.known_encodings.pop(matched_index)
-            except Exception:
-                pass
-
-            # remove arquivo de imagem (se existir)
-            img_path = os.path.join(faces_dir, removed_name)
-            try:
-                if os.path.exists(img_path):
-                    os.remove(img_path)
-            except Exception as e:
-                print(f"[ERRO] Não foi possível remover imagem {img_path}: {e}")
-
-            # remove do cards.pkl (tenta com nome com e sem extensão)
-            cards = load_cards()
-            if removed_name in cards:
-                del cards[removed_name]
-            key_no_ext = os.path.splitext(removed_name)[0]
-            if key_no_ext in cards:
-                del cards[key_no_ext]
-            save_cards(cards)
-
-            # remove do last_access se existir (com e sem extensão)
-            if removed_name in self.last_access:
-                del self.last_access[removed_name]
-            if key_no_ext in self.last_access:
-                del self.last_access[key_no_ext]
-            save_last_access(self.last_access)
-
-            # salva encodings novamente
-            save_known_faces(self.known_encodings, self.known_names)
-
-            # atualiza UI
-            self.refresh_user_list()
-            self.add_log(f"Usuário removido: {removed_name}")
-            return
-
-        # fallback: lista vazia ou sem seleção -> mostra uma caixa para escolher
-        names_display = [os.path.splitext(n)[0] for n in self.known_names]
-        if not names_display:
-            QMessageBox.information(self, "Info", "Nenhum usuário cadastrado.")
-            return
-        user, ok = QInputDialog.getItem(self, "Remover rosto", "Selecione o usuário:", names_display, 0, False)
-        if not ok or not user:
-            return
-
-        # reutiliza a lógica acima para remover
-        # encontra index
-        matched_index = None
-        matched_fname = None
-        for i, fname in enumerate(self.known_names):
-            if os.path.splitext(fname)[0] == user:
-                matched_index = i
-                matched_fname = fname
-                break
-        if matched_index is None:
-            QMessageBox.warning(self, "Erro", "Usuário não encontrado.")
-            return
-
-        removed_name = self.known_names.pop(matched_index)
-        try:
-            self.known_encodings.pop(matched_index)
-        except Exception:
-            pass
-
-        img_path = os.path.join(faces_dir, removed_name)
-        try:
-            if os.path.exists(img_path):
-                os.remove(img_path)
-        except Exception as e:
-            print(f"[ERRO] Não foi possível remover imagem {img_path}: {e}")
 
         cards = load_cards()
-        if removed_name in cards:
-            del cards[removed_name]
-        key_no_ext = os.path.splitext(removed_name)[0]
-        if key_no_ext in cards:
-            del cards[key_no_ext]
+        if uid in cards.values():
+            QMessageBox.critical(self, "Erro", f"Este cartão já está associado a outro usuário.")
+            return
+
+        cards[name] = uid
         save_cards(cards)
-
-        if removed_name in self.last_access:
-            del self.last_access[removed_name]
-        if key_no_ext in self.last_access:
-            del self.last_access[key_no_ext]
-        save_last_access(self.last_access)
-
-        save_known_faces(self.known_encodings, self.known_names)
-        self.refresh_user_list()
-        self.add_log(f"Usuário removido: {removed_name}")
+        self.add_log(f"Usuário {os.path.splitext(name)[0]} registrado (UID: {uid})")

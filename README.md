@@ -1,5 +1,5 @@
-# Sistema de Reconhecimento Facial com RFID
-## Ainda não foi finalizado completamente, porém já está funcionando.
+# Sistema de Reconhecimento Facial com RFID (PyFacesRecognition)
+## Projeto ainda em atualizações para correções de bugs...
 
 Este projeto foi desenvolvido como **Trabalho de Conclusão de Curso (TCC) de Automação Industrial** com o objetivo de criar um sistema de **controle de acesso seguro** utilizando **reconhecimento facial** e autenticação com **cartão RFID**.  
 Somente após a verificação da face e a aproximação de um cartão autorizado, o sistema libera o acesso através da abertura de uma porta controlada por um servo motor e indicações visuais com LED.
@@ -30,7 +30,7 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 
 ### Python
 - `opencv-python` → Captura e processamento de imagem para reconhecimento facial.  
-- `face-recognition` → Identificação e validação de rostos.  
+- `face-recognit ion` → Identificação e validação de rostos.  
 - `pyserial` → Comunicação entre Python e Arduino.
 
 ### Arduino
