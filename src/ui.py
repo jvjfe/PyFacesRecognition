@@ -1,3 +1,4 @@
+# Importação dos módulos do PyQt5 para interface gráfica e widgets
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton,
     QFileDialog, QMessageBox, QInputDialog, QTextEdit, QListWidget,
@@ -5,20 +6,25 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QPixmap, QColor, QPainter
 from PyQt5.QtCore import Qt, QTimer
+
+# Importação de módulos padrão do Python
 import os, cv2, json, numpy as np
 from datetime import datetime
-from .arduino import conectar_arduino
 
+# Importação de funções personalizadas do projeto
+from .arduino import conectar_arduino
 from .utils import (
     load_known_faces, save_known_faces, get_face_encoding, compare_faces,
     load_cards, save_cards, faces_dir
 )
 from .dialogs import CaptureDialog, aguardar_cartao_dialog
 
+# Definição de arquivos JSON para armazenar últimos acessos e status dos usuários
 LAST_ACCESS_FILE = os.path.join(faces_dir, "last_access.json")
 STATUS_FILE = os.path.join(faces_dir, "status.json")
 
 
+# Função para carregar os últimos acessos dos usuários
 def load_last_access():
     if os.path.exists(LAST_ACCESS_FILE):
         try:
@@ -29,6 +35,7 @@ def load_last_access():
     return {}
 
 
+# Função para salvar os últimos acessos dos usuários
 def save_last_access(data):
     try:
         with open(LAST_ACCESS_FILE, "w", encoding="utf-8") as f:
@@ -37,6 +44,7 @@ def save_last_access(data):
         print("[ERRO] Não foi possível salvar last_access:", e)
 
 
+# Função para carregar o status atual (dentro/fora) dos usuários
 def load_status():
     if os.path.exists(STATUS_FILE):
         try:
@@ -47,6 +55,7 @@ def load_status():
     return {}
 
 
+# Função para salvar o status atual dos usuários
 def save_status(data):
     try:
         with open(STATUS_FILE, "w", encoding="utf-8") as f:
@@ -55,18 +64,23 @@ def save_status(data):
         print("[ERRO] Não foi possível salvar status:", e)
 
 
+# Classe para exibir detalhes de um usuário em um diálogo
 class UserDialog(QDialog):
     def __init__(self, name, img_path, last_access, status, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Detalhes do Usuário")
+
+        # Estilo do diálogo
         self.setStyleSheet("""
             QDialog { background-color: #0f172a; color: #e2e8f0; }
             QLabel { font-size: 14px; }
             QPushButton { background-color: #2563eb; color: #fff; border-radius: 6px; padding: 6px 10px; }
         """)
+        
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)
 
+        # Exibe a imagem do usuário, se existir
         if os.path.exists(img_path):
             pixmap = QPixmap(img_path).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             img_label = QLabel()
@@ -74,19 +88,23 @@ class UserDialog(QDialog):
             img_label.setAlignment(Qt.AlignCenter)
             layout.addWidget(img_label)
 
+        # Exibe o nome do usuário
         name_label = QLabel(f"👤 {os.path.splitext(name)[0]}")
         name_label.setAlignment(Qt.AlignCenter)
         name_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #38bdf8;")
         layout.addWidget(name_label)
 
+        # Exibe o último acesso do usuário
         last_access_label = QLabel(f"🕒 Último acesso: {last_access if last_access else 'Nunca'}")
         last_access_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(last_access_label)
 
+        # Exibe o status atual do usuário (dentro ou fora da empresa)
         status_label = QLabel(f"📍 Status: {'Dentro da empresa' if status == 'dentro' else 'Fora da empresa'}")
         status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(status_label)
 
+        # Botão de fechar diálogo
         buttons = QDialogButtonBox(QDialogButtonBox.Ok)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
@@ -94,6 +112,7 @@ class UserDialog(QDialog):
         self.setLayout(layout)
 
 
+# Classe principal da aplicação de controle de acesso
 class App(QWidget):
     def __init__(self, arduino):
         super().__init__()
@@ -101,72 +120,34 @@ class App(QWidget):
         self.setWindowTitle("Controle de Acesso RFID + Rosto")
         self.setGeometry(400, 200, 1000, 600)
 
-        # Indicador de status do Arduino
+        # Indicador de status do Arduino (conectado/desconectado)
         self.status_label = QLabel()
         self.status_label.setFixedSize(20, 20)
         self.status_label.setStyleSheet("border-radius: 10px; background-color: red;")
         self.status_label.setToolTip("Arduino desconectado")
 
+        # Inicializa variáveis de controle
         self.logs_visible = False
         self.last_access = load_last_access()
         self.status = load_status()
 
-        # estilo
+        # Define o estilo da interface
         self.setStyleSheet("""
-            QWidget {
-                background-color: #0f172a;
-                color: #e2e8f0;
-                font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
-            }
-            QLabel#title {
-                font-size: 28px;
-                font-weight: bold;
-                color: #38bdf8;
-                margin: 20px;
-            }
-            QPushButton {
-                background-color: #1e293b;
-                border: 2px solid #334155;
-                border-radius: 10px;
-                padding: 10px 16px;
-                font-size: 15px;
-                font-weight: bold;
-                color: #e2e8f0;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-                border: 2px solid #1d4ed8;
-            }
-            QLineEdit {
-                background-color: #1e293b;
-                border: 2px solid #334155;
-                border-radius: 8px;
-                padding: 8px;
-                font-size: 14px;
-                color: #e2e8f0;
-            }
-            QListWidget {
-                background-color: #1e293b;
-                border-radius: 8px;
-                padding: 5px;
-                font-size: 15px;
-            }
-            QTextEdit {
-                background-color: #1e293b;
-                color: #e2e8f0;
-                border: 2px solid #334155;
-                border-radius: 8px;
-                padding: 8px;
-                font-size: 14px;
-            }
+            QWidget { background-color: #0f172a; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+            QLabel#title { font-size: 28px; font-weight: bold; color: #38bdf8; margin: 20px; }
+            QPushButton { background-color: #1e293b; border: 2px solid #334155; border-radius: 10px; padding: 10px 16px; font-size: 15px; font-weight: bold; color: #e2e8f0; }
+            QPushButton:hover { background-color: #2563eb; border: 2px solid #1d4ed8; }
+            QLineEdit { background-color: #1e293b; border: 2px solid #334155; border-radius: 8px; padding: 8px; font-size: 14px; color: #e2e8f0; }
+            QListWidget { background-color: #1e293b; border-radius: 8px; padding: 5px; font-size: 15px; }
+            QTextEdit { background-color: #1e293b; color: #e2e8f0; border: 2px solid #334155; border-radius: 8px; padding: 8px; font-size: 14px; }
         """)
 
-        # layout principal
+        # Layouts principais da interface
         main_layout = QHBoxLayout()
         left_layout = QVBoxLayout()
         left_layout.setAlignment(Qt.AlignTop)
 
-        # layout do topo (status + título)
+        # Layout superior com status do Arduino e título
         top_layout = QHBoxLayout()
         top_layout.setAlignment(Qt.AlignLeft)
         top_layout.addWidget(self.status_label)
@@ -178,7 +159,7 @@ class App(QWidget):
 
         left_layout.addLayout(top_layout)
 
-        # botões
+        # Botões de controle
         btn_layout = QHBoxLayout()
         btn_unlock = QPushButton("Desbloquear")
         btn_unlock.clicked.connect(self.unlock)
@@ -198,20 +179,20 @@ class App(QWidget):
 
         left_layout.addLayout(btn_layout)
 
-        # pesquisa
+        # Caixa de busca de usuários
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("Pesquisar usuário...")
         self.search_box.textChanged.connect(self.filter_users)
         left_layout.addWidget(self.search_box)
 
-        # lista de usuários
+        # Lista de usuários
         self.user_list = QListWidget()
         self.user_list.itemClicked.connect(self.show_user_details)
         left_layout.addWidget(self.user_list)
 
         main_layout.addLayout(left_layout)
 
-        # painel de logs lateral
+        # Painel de logs
         self.log_panel = QTextEdit()
         self.log_panel.setReadOnly(True)
         self.log_panel.setFixedWidth(300)
@@ -220,52 +201,73 @@ class App(QWidget):
 
         self.setLayout(main_layout)
 
-        # carregar dados
+        # Carrega rostos conhecidos
         self.known_encodings, self.known_names = load_known_faces()
         self.refresh_user_list()
 
-        # Timer para verificar o status do Arduino
+        # Timer para atualizar status do Arduino a cada 10 segundos
         self.timer = QTimer()
         self.timer.timeout.connect(self.atualizar_status_arduino)
-        self.timer.start(10000)  # a cada 10 segundos
-        self.atualizar_status_arduino()  # verificação inicial
+        self.timer.start(10000)
+        self.atualizar_status_arduino()
 
-    # atualizar status do Arduino
+
+    # Atualiza o status de conexão do Arduino
     def atualizar_status_arduino(self):
-        if self.arduino and self.arduino.is_open:
-            self.status_label.setStyleSheet("border-radius: 10px; background-color: green;")
-            self.status_label.setToolTip("Arduino conectado")
-        else:
-            novo_arduino = conectar_arduino()
-            if novo_arduino:
-                self.arduino = novo_arduino
+        try:
+            arduino_conectado = False
+            if self.arduino:
+                try:
+                    # tenta escrever algo mínimo
+                    self.arduino.write(b"\n")
+                    arduino_conectado = True
+                except Exception:
+                    arduino_conectado = False
+
+            if arduino_conectado:
                 self.status_label.setStyleSheet("border-radius: 10px; background-color: green;")
                 self.status_label.setToolTip("Arduino conectado")
-                self.add_log("Arduino conectado com sucesso.")
             else:
-                self.status_label.setStyleSheet("border-radius: 10px; background-color: red;")
-                self.status_label.setToolTip("Arduino desconectado")
-                self.add_log("Arduino não encontrado.")
+                # tenta reconectar
+                novo_arduino = conectar_arduino()
+                if novo_arduino:
+                    self.arduino = novo_arduino
+                    self.status_label.setStyleSheet("border-radius: 10px; background-color: green;")
+                    self.status_label.setToolTip("Arduino conectado")
+                    self.add_log("🟢 Arduino conectado com sucesso.")
+                else:
+                    self.status_label.setStyleSheet("border-radius: 10px; background-color: red;")
+                    self.status_label.setToolTip("Arduino desconectado")
+                    self.add_log("🔴 Arduino desconectado ou não encontrado.")
+                    self.arduino = None 
+        except Exception as e:
+            self.status_label.setStyleSheet("border-radius: 10px; background-color: red;")
+            self.status_label.setToolTip("Arduino desconectado")
+            self.arduino = None
+            self.add_log(f"[ERRO] Falha ao atualizar status do Arduino: {e}")
 
-    # mostrar/ocultar logs
+    # Alterna a visibilidade do painel de logs
     def toggle_logs(self):
         self.logs_visible = not self.logs_visible
         self.log_panel.setVisible(self.logs_visible)
 
-    # atualizar lista
+
+    # Atualiza a lista de usuários exibida
     def refresh_user_list(self):
         self.user_list.clear()
         for name in self.known_names:
             display = os.path.splitext(name)[0]
             self.user_list.addItem(QListWidgetItem(display))
 
-    # filtrar
+
+    # Filtra usuários na lista conforme texto digitado na caixa de busca
     def filter_users(self, text):
         for i in range(self.user_list.count()):
             item = self.user_list.item(i)
             item.setHidden(text.lower() not in item.text().lower())
 
-    # mostrar detalhes
+
+    # Exibe o diálogo de detalhes do usuário selecionado
     def show_user_details(self, item):
         display_name = item.text()
         matched = None
@@ -282,42 +284,42 @@ class App(QWidget):
         dlg = UserDialog(matched, img_path, last, status, self)
         dlg.exec_()
 
-    # adicionar log
+
+    # Adiciona uma mensagem ao painel de logs com timestamp
     def add_log(self, message):
+        if not message or not isinstance(message, str):
+            return
         timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self.log_panel.append(f"[{timestamp}] {message}")
+        self.log_panel.verticalScrollBar().setValue(self.log_panel.verticalScrollBar().maximum())
 
-    # desbloquear
+
+    # Função principal de desbloqueio: verifica rosto + cartão
     def unlock(self):
         dialog = CaptureDialog()
         if dialog.exec_() != dialog.Accepted:
             return
-
         frame = dialog.captured_frame
         encoding = get_face_encoding(frame)
         if encoding is None:
             QMessageBox.warning(self, "Falha", "Nenhum rosto detectado.")
             return
-
         user_name = compare_faces(self.known_encodings, self.known_names, encoding)
         if not user_name:
             QMessageBox.warning(self, "Falha", "Rosto não reconhecido.")
             return
-
         display_name = os.path.splitext(user_name)[0]
         cards = load_cards()
-
         uid = aguardar_cartao_dialog(self, self.arduino, f"Rosto reconhecido: {display_name}\nAproxime o cartão do leitor")
         if not uid:
             QMessageBox.warning(self, "Falha", "Nenhum cartão detectado.")
             return
-
+        # Valida cartão existente e atualiza status de entrada/saída
         if user_name in cards:
             expected_uid = cards[user_name]
             if expected_uid == uid:
                 if self.arduino:
                     self.arduino.write(b"OPEN\n")
-
                 current_status = self.status.get(user_name, "fora")
                 if current_status == "fora":
                     action = "ENTRADA"
@@ -325,10 +327,8 @@ class App(QWidget):
                 else:
                     action = "SAÍDA"
                     self.status[user_name] = "fora"
-
                 QMessageBox.information(self, "Sucesso", f"{action} registrada para {display_name}")
                 self.add_log(f"{action} de {display_name}")
-
                 self.last_access[user_name] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                 save_last_access(self.last_access)
                 save_status(self.status)
@@ -336,7 +336,7 @@ class App(QWidget):
                 QMessageBox.critical(self, "Erro", "Cartão não corresponde ao rosto! Ação negada.")
                 self.add_log(f"Tentativa com cartão inválido para {display_name} (UID detectado: {uid}, esperado: {expected_uid})")
             return
-
+        # Registro de novo cartão para usuário
         reply = QMessageBox.question(
             self, "Registrar Cartão",
             f"Nenhum cartão cadastrado para {display_name}.\nDeseja registrar o cartão detectado para este usuário?",
@@ -345,7 +345,6 @@ class App(QWidget):
         if reply != QMessageBox.Yes:
             QMessageBox.information(self, "Cancelado", "Registro de cartão cancelado.")
             return
-
         existing_owner = None
         for k, v in cards.items():
             if v == uid:
@@ -356,26 +355,25 @@ class App(QWidget):
             QMessageBox.critical(self, "Erro", f"Este cartão (UID {uid}) já está associado ao usuário '{owner_display}'.")
             self.add_log(f"Tentativa de registrar cartão já associado (UID {uid}) para {display_name}; proprietário: {owner_display}")
             return
-
+        # Salva novo cartão e registra entrada
         cards[user_name] = uid
         save_cards(cards)
         QMessageBox.information(self, "Sucesso", f"Cartão registrado e ENTRADA registrada para {display_name}")
         self.add_log(f"Cartão registrado e ENTRADA de {display_name} (UID: {uid})")
         if self.arduino:
             self.arduino.write(b"OPEN\n")
-
         self.last_access[user_name] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self.status[user_name] = "dentro"
         save_last_access(self.last_access)
         save_status(self.status)
 
-    # remover rosto
+
+    # Remove um rosto/usuário existente
     def remove_face(self):
         item = self.user_list.currentItem()
         if not item:
             QMessageBox.warning(self, "Erro", "Selecione um usuário para remover.")
             return
-
         user = item.text()
         fname = None
         for name in self.known_names:
@@ -385,11 +383,9 @@ class App(QWidget):
         if not fname:
             QMessageBox.warning(self, "Erro", "Arquivo do usuário não encontrado.")
             return
-
         reply = QMessageBox.question(self, "Confirmação", f"Tem certeza que deseja remover {user}?", QMessageBox.Yes | QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
-
         try:
             os.remove(os.path.join(faces_dir, fname))
             self.known_names.remove(fname)
@@ -400,41 +396,35 @@ class App(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Falha ao remover: {e}")
 
-    # adicionar rosto
+
+    # Adiciona um novo rosto/usuário
     def add_face(self):
         dialog = CaptureDialog()
         if dialog.exec_() != dialog.Accepted:
             return
-
         frame = dialog.captured_frame
         encoding = get_face_encoding(frame)
         if encoding is None:
             QMessageBox.warning(self, "Erro", "Nenhum rosto detectado.")
             return
-
         name, ok = QInputDialog.getText(self, "Novo Usuário", "Digite o nome do usuário:")
         if not ok or not name.strip():
             return
         name = name.strip() + ".png"
-
         img_path = os.path.join(faces_dir, name)
         cv2.imwrite(img_path, frame)
-
         self.known_encodings.append(encoding)
         self.known_names.append(name)
         save_known_faces(self.known_encodings, self.known_names)
         self.refresh_user_list()
-
         uid = aguardar_cartao_dialog(self, self.arduino, f"Associe um cartão ao usuário {os.path.splitext(name)[0]}")
         if not uid:
             QMessageBox.warning(self, "Erro", "Nenhum cartão detectado. O usuário foi cadastrado sem cartão.")
             return
-
         cards = load_cards()
         if uid in cards.values():
             QMessageBox.critical(self, "Erro", f"Este cartão já está associado a outro usuário.")
             return
-
         cards[name] = uid
         save_cards(cards)
         self.add_log(f"Usuário {os.path.splitext(name)[0]} registrado (UID: {uid})")
