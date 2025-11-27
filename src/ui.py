@@ -124,7 +124,7 @@ class App(QWidget):
         self.status_label = QLabel()
         self.status_label.setFixedSize(20, 20)
         self.status_label.setStyleSheet("border-radius: 10px; background-color: red;")
-        self.status_label.setToolTip("Arduino desconectado")
+        self.status_label.setToolTip("Hardware desconectado")
 
         # Inicializa variáveis de controle
         self.logs_visible = False
@@ -226,25 +226,25 @@ class App(QWidget):
 
             if arduino_conectado:
                 self.status_label.setStyleSheet("border-radius: 10px; background-color: green;")
-                self.status_label.setToolTip("Arduino conectado")
+                self.status_label.setToolTip("Hardware conectado")
             else:
                 # tenta reconectar
                 novo_arduino = conectar_arduino()
                 if novo_arduino:
                     self.arduino = novo_arduino
                     self.status_label.setStyleSheet("border-radius: 10px; background-color: green;")
-                    self.status_label.setToolTip("Arduino conectado")
-                    self.add_log("🟢 Arduino conectado com sucesso.")
+                    self.status_label.setToolTip("Hardware conectado")
+                    self.add_log("🟢 Hardware conectado com sucesso.")
                 else:
                     self.status_label.setStyleSheet("border-radius: 10px; background-color: red;")
-                    self.status_label.setToolTip("Arduino desconectado")
-                    self.add_log("🔴 Arduino desconectado ou não encontrado.")
+                    self.status_label.setToolTip("Hardware desconectado")
+                    self.add_log("🔴 Hardware desconectado ou não encontrado.")
                     self.arduino = None 
         except Exception as e:
             self.status_label.setStyleSheet("border-radius: 10px; background-color: red;")
-            self.status_label.setToolTip("Arduino desconectado")
+            self.status_label.setToolTip("Hardware desconectado")
             self.arduino = None
-            self.add_log(f"[ERRO] Falha ao atualizar status do Arduino: {e}")
+            self.add_log(f"[ERRO] Falha ao atualizar status do Hardware: {e}")
 
     # Alterna a visibilidade do painel de logs
     def toggle_logs(self):
