@@ -2,11 +2,11 @@
 #include <MFRC522.h>
 #include <Servo.h>
 
-// Pinos
 #define RST_PIN 9
 #define SS_PIN 10
 #define SERVO_PIN 3
 #define LED_STATUS 5
+#define BUZZER 7
 
 Servo servoMotor;
 MFRC522 rfid(SS_PIN, RST_PIN);
@@ -18,17 +18,19 @@ void setup()
     rfid.PCD_Init();
 
     servoMotor.attach(SERVO_PIN);
-    servoMotor.write(0); // posição fechada
+    servoMotor.write(0);
 
     pinMode(LED_STATUS, OUTPUT);
     digitalWrite(LED_STATUS, LOW);
+
+    pinMode(BUZZER, OUTPUT);
+    digitalWrite(BUZZER, LOW);
 
     Serial.println("Arduino pronto para receber comandos...");
 }
 
 void loop()
 {
-    // Lê cartão RFID
     if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial())
     {
         String uid = "";
@@ -47,12 +49,10 @@ void loop()
         delay(200);
     }
 
-    // Recebe comando do Python
     if (Serial.available() > 0)
     {
         String comando = Serial.readStringUntil('\n');
-        comando.trim(); // remove espaços e quebras de linha extras
-
+        comando.trim();
         if (comando.equals("OPEN"))
         {
             Serial.println("[DEBUG] Comando OPEN recebido");
@@ -72,11 +72,22 @@ void loop()
 
 void acessoAutorizado()
 {
-    piscarLED(3, 200);    // LED pisca 3 vezes
-    servoMotor.write(90); // abre porta
+    digitalWrite(BUZZER, HIGH);
+    delay(150);
+    digitalWrite(BUZZER, LOW);
+
+    piscarLED(3, 200);
+
+    servoMotor.write(90);
     Serial.println("[DEBUG] Porta aberta");
-    delay(3000);         // espera 3s
-    servoMotor.write(0); // fecha porta
+
+    delay(3000);
+
+    digitalWrite(BUZZER, HIGH);
+    delay(300);
+    digitalWrite(BUZZER, LOW);
+
+    servoMotor.write(0); 
     Serial.println("[DEBUG] Porta fechada");
 }
 
