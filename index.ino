@@ -11,8 +11,24 @@
 Servo servoMotor;
 MFRC522 rfid(SS_PIN, RST_PIN);
 
-void setup()
-{
+void somUrnaConfirmacao() {
+    tone(BUZZER, 2132, 60);
+    delay(80);
+    tone(BUZZER, 2032, 60);
+    delay(80);
+    tone(BUZZER, 2132, 200); 
+    delay(250);
+    noTone(BUZZER);
+}
+
+
+void somUrnaFechando() {
+    tone(BUZZER, 988, 120);
+    delay(150)
+    noTone(BUZZER);
+}
+
+void setup() {
     Serial.begin(9600);
     SPI.begin();
     rfid.PCD_Init();
@@ -29,52 +45,40 @@ void setup()
     Serial.println("Arduino pronto para receber comandos...");
 }
 
-void loop()
-{
-    if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial())
-    {
+void loop() {
+    if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
         String uid = "";
-        for (byte i = 0; i < rfid.uid.size; i++)
-        {
+        for (byte i = 0; i < rfid.uid.size; i++) {
             if (rfid.uid.uidByte[i] < 0x10)
                 uid += "0";
             uid += String(rfid.uid.uidByte[i], HEX);
         }
         uid.toUpperCase();
 
-        Serial.println(uid); // envia UID para o Python
+        Serial.println(uid);
 
         rfid.PICC_HaltA();
         rfid.PCD_StopCrypto1();
         delay(200);
     }
 
-    if (Serial.available() > 0)
-    {
+    if (Serial.available() > 0) {
         String comando = Serial.readStringUntil('\n');
         comando.trim();
-        if (comando.equals("OPEN"))
-        {
+        if (comando.equals("OPEN")) {
             Serial.println("[DEBUG] Comando OPEN recebido");
             acessoAutorizado();
-        }
-        else if (comando.startsWith("LOG"))
-        {
+        } else if (comando.startsWith("LOG")) {
             Serial.println("Log recebido: " + comando);
-        }
-        else
-        {
+        } else {
             Serial.print("[DEBUG] Comando desconhecido: ");
             Serial.println(comando);
         }
     }
 }
 
-void acessoAutorizado()
-{
-    digitalWrite(BUZZER, HIGH);
-    delay(150);
-    digitalWrite(BUZZER, LOW);
+void acessoAutorizado() {
+    somUrnaConfirmacao();
 
     piscarLED(3, 200);
 
@@ -83,18 +87,14 @@ void acessoAutorizado()
 
     delay(3000);
 
-    digitalWrite(BUZZER, HIGH);
-    delay(300);
-    digitalWrite(BUZZER, LOW);
+    somUrnaFechando();
 
-    servoMotor.write(0); 
+    servoMotor.write(0);
     Serial.println("[DEBUG] Porta fechada");
 }
 
-void piscarLED(int vezes, int intervalo)
-{
-    for (int i = 0; i < vezes; i++)
-    {
+void piscarLED(int vezes, int intervalo) {
+    for (int i = 0; i < vezes; i++) {
         digitalWrite(LED_STATUS, HIGH);
         delay(intervalo);
         digitalWrite(LED_STATUS, LOW);
