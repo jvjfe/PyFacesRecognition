@@ -21,6 +21,7 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 - **1x Servo motor 5V**
 - **1x LED (vermelho ou verde)**
 - **1x Resistor 220 Ω**
+- **1x Buzzer**
 - **Jumpers macho-fêmea**
 - **Protoboard**
 
@@ -60,6 +61,10 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 3. **LED + Resistor 220 Ω**:  
    - Anodo → pino 5 do Arduino (com resistor em série)  
    - Catodo → GND  
+
+4. **Buzzer**: 
+   - Anodo → pino 7 do Arduino
+   - Catodo → GND
 
 ---
 ## Tecnologias e Bibliotecas Principais
