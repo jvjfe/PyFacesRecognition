@@ -11,6 +11,7 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
 - Validação de cartão RFID para autenticação do usuário.
 - Controle físico de acesso com **servo motor** (porta).
 - Indicação de status por **LED**.
+- Indicação de status por **Buzzer**.
 - Integração entre **Python** (processamento da face) e **Arduino Uno** (controle físico).
 
 ---
