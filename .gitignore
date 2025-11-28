@@ -23,6 +23,8 @@ ENV/
 
 faces/*.jpg
 faces/*.png
+faces/*.pkl
+faces/*.json
 
 *.sqlite3
 *.ipynb_checkpoints
