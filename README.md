@@ -110,7 +110,7 @@ Somente após a verificação da face e a aproximação de um cartão autorizado
    ```bash
    python -m src.main         
    ```
-**Observação: caso os arquivos ```last_access.json``` e ```status.json``` da pasta ```faces`` não sejam criados automaticamente, o usuário deverá criá-los manualmente.**
+**Observação: caso os arquivos ```last_access.json``` e ```status.json``` da pasta ```faces``` não sejam criados automaticamente, o usuário deverá criá-los manualmente.**
 
 5. O sistema iniciará a câmera.
 
