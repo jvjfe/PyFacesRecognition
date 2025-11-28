@@ -76,11 +76,11 @@ class UserDialog(QDialog):
             QLabel { font-size: 14px; }
             QPushButton { background-color: #2563eb; color: #fff; border-radius: 6px; padding: 6px 10px; }
         """)
-        
+
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)
 
-        # Exibe a imagem do usuário, se existir
+        # Exibe imagem
         if os.path.exists(img_path):
             pixmap = QPixmap(img_path).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             img_label = QLabel()
@@ -88,29 +88,59 @@ class UserDialog(QDialog):
             img_label.setAlignment(Qt.AlignCenter)
             layout.addWidget(img_label)
 
-        # Exibe o nome do usuário
+        # Nome
         name_label = QLabel(f"👤 {os.path.splitext(name)[0]}")
         name_label.setAlignment(Qt.AlignCenter)
         name_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #38bdf8;")
         layout.addWidget(name_label)
 
-        # Exibe o último acesso do usuário
+        # Último acesso
         last_access_label = QLabel(f"🕒 Último acesso: {last_access if last_access else 'Nunca'}")
         last_access_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(last_access_label)
 
-        # Exibe o status atual do usuário (dentro ou fora da empresa)
+        # --- CÁLCULO DO TEMPO ---
+        tempo_label = QLabel()
+        tempo_label.setAlignment(Qt.AlignCenter)
+
+        if last_access and last_access != "Nunca":
+            try:
+                last_dt = datetime.strptime(last_access, "%d/%m/%Y %H:%M:%S")
+                now = datetime.now()
+                diff = now - last_dt
+
+                dias = diff.days
+                horas = diff.seconds // 3600
+                mins = (diff.seconds % 3600) // 60
+
+                if dias >= 1:
+                    tempo_formatado = f"{dias} dia(s), {horas}h {mins}min"
+                else:
+                    tempo_formatado = f"{horas}h {mins}min"
+
+                if status == "dentro":
+                    tempo_label.setText(f"🏢 Tempo dentro da empresa: {tempo_formatado}")
+                else:
+                    tempo_label.setText(f"🚪 Tempo fora da empresa: {tempo_formatado}")
+
+            except Exception:
+                tempo_label.setText("Erro ao calcular tempo.")
+        else:
+            tempo_label.setText("Sem registros de tempo.")
+
+        layout.addWidget(tempo_label)
+
+        # Status dentro/fora
         status_label = QLabel(f"📍 Status: {'Dentro da empresa' if status == 'dentro' else 'Fora da empresa'}")
         status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(status_label)
 
-        # Botão de fechar diálogo
+        # Botão OK
         buttons = QDialogButtonBox(QDialogButtonBox.Ok)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
 
         self.setLayout(layout)
-
 
 # Classe principal da aplicação de controle de acesso
 class App(QWidget):
